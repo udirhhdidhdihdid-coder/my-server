@@ -4,10 +4,11 @@ import random
 
 app = Flask(__name__)
 
-# متغيرات لحفظ حالة الكود والربط مؤقتاً
+# متغيرات لحفظ حالة الكود، الربط، وقائمة التطبيقات مؤقتاً
 current_data = {
     "code": "000000",
-    "linked": False
+    "linked": False,
+    "apps": "لا توجد تطبيقات مرفوعة بعد"
 }
 
 @app.route('/generate-code', methods=['GET'])
@@ -34,6 +35,23 @@ def verify_code():
 def check_status():
     return jsonify({
         "linked": current_data["linked"]
+    })
+
+# مسار ليقوم الابن برفع قائمة التطبيقات المثبتة
+@app.route('/upload-apps', methods=['POST'])
+def upload_apps():
+    data = request.json
+    if data and "apps" in data:
+        current_data["apps"] = data["apps"]
+        return jsonify({"success": True, "message": "تم حفظ التطبيقات"})
+    return jsonify({"success": False, "message": "خطأ بالبيانات"}), 400
+
+# مسار ليقوم الأب بجلب قائمة تطبيقات الابن
+@app.route('/get-apps', methods=['GET'])
+def get_apps():
+    return jsonify({
+        "success": True,
+        "apps": current_data["apps"]
     })
 
 if __name__ == '__main__':
