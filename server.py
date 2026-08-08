@@ -4,7 +4,7 @@ import random
 
 app = Flask(__name__)
 
-@app.route('/generate-code', methods=['POST'])
+@app.route('/generate-code', methods=['GET'])
 def generate_code():
     code = str(random.randint(100000, 999999))
     return jsonify({
@@ -13,5 +13,5 @@ def generate_code():
     })
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
