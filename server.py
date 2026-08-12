@@ -6,10 +6,18 @@ import time
 import threading
 import tempfile
 import shutil
-import yt_dlp
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+
+import yt_dlp
+
 
 app = Flask(__name__)
+
+
+# =========================================================
+# إعدادات السيرفر
+# =========================================================
 
 DATA_FILE = "server_data.json"
 
@@ -21,6 +29,18 @@ current_data = {
     "apps": "لا توجد تطبيقات مرفوعة بعد",
     "links": []
 }
+
+
+# =========================================================
+# User-Agent
+# =========================================================
+
+USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 10; K) "
+    "AppleWebKit/537.36 "
+    "(KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Mobile Safari/537.36"
+)
 
 
 # =========================================================
@@ -98,7 +118,10 @@ load_data()
 # الصفحة الرئيسية
 # =========================================================
 
-@app.route("/", methods=["GET"])
+@app.route(
+    "/",
+    methods=["GET"]
+)
 def home():
 
     return jsonify({
@@ -112,26 +135,18 @@ def home():
             "online",
 
         "version":
-            "4.0",
+            "5.0",
 
         "routes": [
 
             "/",
-
             "/generate-code",
-
             "/verify-code",
-
             "/check-status",
-
             "/save-link",
-
             "/links",
-
             "/clear-links",
-
             "/status",
-
             "/download-video"
 
         ]
@@ -140,7 +155,7 @@ def home():
 
 
 # =========================================================
-# إنشاء كود جديد
+# توليد كود
 # =========================================================
 
 @app.route(
@@ -216,7 +231,7 @@ def verify_code():
 
 
 # =========================================================
-# فحص حالة الربط
+# حالة الربط
 # =========================================================
 
 @app.route(
@@ -241,35 +256,7 @@ def check_status():
 
 
 # =========================================================
-# التحقق من الرابط
-# =========================================================
-
-def valid_http_url(url):
-
-    try:
-
-        parsed = urlparse(url)
-
-        return (
-
-            parsed.scheme in [
-                "http",
-                "https"
-            ]
-
-            and
-
-            bool(parsed.netloc)
-
-        )
-
-    except Exception:
-
-        return False
-
-
-# =========================================================
-# حفظ رابط
+# حفظ الرابط
 # =========================================================
 
 @app.route(
@@ -280,20 +267,12 @@ def save_link():
 
     url = ""
 
-    # -----------------------------------------------------
-    # GET
-    # -----------------------------------------------------
-
     if request.method == "GET":
 
         url = request.args.get(
             "url",
             ""
         ).strip()
-
-    # -----------------------------------------------------
-    # POST
-    # -----------------------------------------------------
 
     else:
 
@@ -316,10 +295,6 @@ def save_link():
 
             url = ""
 
-    # -----------------------------------------------------
-    # فحص الرابط
-    # -----------------------------------------------------
-
     if not url:
 
         return jsonify({
@@ -331,7 +306,11 @@ def save_link():
 
         }), 400
 
-    if not valid_http_url(url):
+    if not (
+        url.startswith("http://")
+        or
+        url.startswith("https://")
+    ):
 
         return jsonify({
 
@@ -342,17 +321,7 @@ def save_link():
 
         }), 400
 
-    # -----------------------------------------------------
-    # حفظ الرابط
-    # -----------------------------------------------------
-
     with lock:
-
-        if "links" not in current_data:
-
-            current_data["links"] = []
-
-        # منع التكرار
 
         for item in current_data["links"]:
 
@@ -378,9 +347,7 @@ def save_link():
 
                 })
 
-        # إضافة الرابط
-
-        link_data = {
+        current_data["links"].append({
 
             "url":
                 url,
@@ -388,11 +355,7 @@ def save_link():
             "created_at":
                 int(time.time())
 
-        }
-
-        current_data["links"].append(
-            link_data
-        )
+        })
 
         save_data()
 
@@ -497,10 +460,7 @@ def server_status():
 
             "links_count":
                 len(
-                    current_data.get(
-                        "links",
-                        []
-                    )
+                    current_data["links"]
                 ),
 
             "time":
@@ -510,22 +470,10 @@ def server_status():
 
 
 # =========================================================
-# فحص رابط TikTok / Instagram
+# التحقق من نطاق TikTok / Instagram
 # =========================================================
 
-def is_supported_video_url(video_url):
-
-    allowed_hosts = [
-
-        "tiktok.com",
-        "www.tiktok.com",
-        "vm.tiktok.com",
-        "vt.tiktok.com",
-
-        "instagram.com",
-        "www.instagram.com"
-
-    ]
+def is_allowed_video_url(video_url):
 
     try:
 
@@ -538,6 +486,18 @@ def is_supported_video_url(video_url):
             .lower()
             .split(":")[0]
         )
+
+        allowed_hosts = [
+
+            "tiktok.com",
+            "www.tiktok.com",
+            "vt.tiktok.com",
+            "vm.tiktok.com",
+
+            "instagram.com",
+            "www.instagram.com"
+
+        ]
 
         for host in allowed_hosts:
 
@@ -559,7 +519,96 @@ def is_supported_video_url(video_url):
 
 
 # =========================================================
-# تحميل فيديو
+# تنظيف الرابط
+# =========================================================
+
+def clean_video_url(video_url):
+
+    if not video_url:
+        return ""
+
+    video_url = video_url.strip()
+
+    video_url = (
+        video_url
+        .replace('"', "")
+        .replace("'", "")
+        .replace(")", "")
+        .replace("]", "")
+        .replace("}", "")
+        .replace(",", "")
+        .replace("،", "")
+    )
+
+    return video_url.strip()
+
+
+# =========================================================
+# حل الرابط المختصر
+# =========================================================
+
+def resolve_short_url(video_url):
+
+    video_url = clean_video_url(
+        video_url
+    )
+
+    try:
+
+        request = Request(
+
+            video_url,
+
+            headers={
+
+                "User-Agent":
+                    USER_AGENT,
+
+                "Accept":
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+
+                "Accept-Language":
+                    "ar,en-US;q=0.9,en;q=0.8"
+
+            }
+
+        )
+
+        response = urlopen(
+            request,
+            timeout=20
+        )
+
+        final_url = response.geturl()
+
+        response.close()
+
+        if final_url:
+
+            print(
+                "Original URL:",
+                video_url
+            )
+
+            print(
+                "Resolved URL:",
+                final_url
+            )
+
+            return final_url
+
+    except Exception as e:
+
+        print(
+            "Resolve URL error:",
+            str(e)
+        )
+
+    return video_url
+
+
+# =========================================================
+# تحميل الفيديو
 # =========================================================
 
 @app.route(
@@ -573,10 +622,6 @@ def download_video():
         ""
     ).strip()
 
-    # -----------------------------------------------------
-    # فحص الرابط
-    # -----------------------------------------------------
-
     if not video_url:
 
         return jsonify({
@@ -588,18 +633,17 @@ def download_video():
 
         }), 400
 
-    if not valid_http_url(video_url):
 
-        return jsonify({
+    # تنظيف الرابط
 
-            "success": False,
+    video_url = clean_video_url(
+        video_url
+    )
 
-            "message":
-                "الرابط غير صالح"
 
-        }), 400
+    # التحقق من الموقع
 
-    if not is_supported_video_url(
+    if not is_allowed_video_url(
         video_url
     ):
 
@@ -608,73 +652,63 @@ def download_video():
             "success": False,
 
             "message":
-                "الرابط يجب أن يكون TikTok أو Instagram"
+                "الرابط ليس TikTok أو Instagram"
 
         }), 400
 
-    # -----------------------------------------------------
-    # حفظ الرابط
-    # -----------------------------------------------------
 
-    try:
+    # محاولة حل الرابط المختصر
 
-        with lock:
+    resolved_url = resolve_short_url(
+        video_url
+    )
 
-            if "links" not in current_data:
 
-                current_data["links"] = []
+    # بعد التحويل نتحقق مرة ثانية
 
-            exists = False
+    if not is_allowed_video_url(
+        resolved_url
+    ):
 
-            for item in current_data["links"]:
+        resolved_url = video_url
 
-                if item.get("url") == video_url:
 
-                    exists = True
+    print(
+        "Download request:"
+    )
 
-                    break
+    print(
+        "URL:",
+        video_url
+    )
 
-            if not exists:
+    print(
+        "Resolved:",
+        resolved_url
+    )
 
-                current_data["links"].append({
 
-                    "url":
-                        video_url,
-
-                    "created_at":
-                        int(time.time())
-
-                })
-
-                save_data()
-
-    except Exception as e:
-
-        print(
-            "Save video link error:",
-            str(e)
-        )
-
-    # -----------------------------------------------------
     # مجلد مؤقت
-    # -----------------------------------------------------
 
     temp_dir = tempfile.mkdtemp(
         prefix="ahmed_video_"
     )
 
+
     output_template = os.path.join(
+
         temp_dir,
+
         "%(id)s.%(ext)s"
+
     )
 
-    downloaded = None
 
     try:
 
-        # -------------------------------------------------
-        # إعداد yt-dlp
-        # -------------------------------------------------
+        # =================================================
+        # إعدادات yt-dlp
+        # =================================================
 
         options = {
 
@@ -700,35 +734,44 @@ def download_video():
                 30,
 
             "retries":
-                2,
+                3,
 
             "fragment_retries":
-                2,
+                3,
 
-            "merge_output_format":
-                "mp4"
+            "http_headers": {
+
+                "User-Agent":
+                    USER_AGENT,
+
+                "Accept-Language":
+                    "ar,en-US;q=0.9,en;q=0.8",
+
+                "Referer":
+                    "https://www.tiktok.com/"
+
+            },
+
+            "nocheckcertificate":
+                True
 
         }
 
-        print(
-            "Downloading video:"
-        )
 
-        print(
-            video_url
-        )
-
-        # -------------------------------------------------
-        # تحميل الفيديو
-        # -------------------------------------------------
+        # =================================================
+        # تشغيل yt-dlp
+        # =================================================
 
         with yt_dlp.YoutubeDL(
             options
         ) as ydl:
 
             info = ydl.extract_info(
-                video_url,
+
+                resolved_url,
+
                 download=True
+
             )
 
             downloaded = (
@@ -737,65 +780,59 @@ def download_video():
                 )
             )
 
-        # -------------------------------------------------
-        # البحث عن الملف إذا تغير الامتداد
-        # -------------------------------------------------
 
-        if (
-            downloaded is None
-            or
-            not os.path.exists(
-                downloaded
-            )
+        # =================================================
+        # البحث عن الملف
+        # =================================================
+
+        if not os.path.exists(
+            downloaded
         ):
 
             files = os.listdir(
                 temp_dir
             )
 
-            video_files = []
-
-            for file_name in files:
-
-                file_path = os.path.join(
-                    temp_dir,
-                    file_name
-                )
-
-                if os.path.isfile(
-                    file_path
-                ):
-
-                    video_files.append(
-                        file_path
-                    )
-
-            if not video_files:
+            if not files:
 
                 return jsonify({
 
                     "success": False,
 
                     "message":
-                        "تم التحميل لكن لم يتم العثور على ملف الفيديو"
+                        "yt-dlp لم ينتج ملف فيديو"
 
                 }), 500
 
-            downloaded = video_files[0]
+            downloaded = os.path.join(
 
-        # -------------------------------------------------
-        # فحص حجم الملف
-        # -------------------------------------------------
+                temp_dir,
 
-        if (
-            not os.path.isfile(
-                downloaded
+                files[0]
+
             )
-            or
-            os.path.getsize(
-                downloaded
-            ) <= 0
+
+
+        if not os.path.exists(
+            downloaded
         ):
+
+            return jsonify({
+
+                "success": False,
+
+                "message":
+                    "لم يتم العثور على الفيديو"
+
+            }), 500
+
+
+        file_size = os.path.getsize(
+            downloaded
+        )
+
+
+        if file_size <= 0:
 
             return jsonify({
 
@@ -806,17 +843,26 @@ def download_video():
 
             }), 500
 
-        # -------------------------------------------------
-        # اسم الملف
-        # -------------------------------------------------
 
         filename = os.path.basename(
             downloaded
         )
 
-        # -------------------------------------------------
-        # إرسال الفيديو
-        # -------------------------------------------------
+
+        print(
+            "Video downloaded:",
+            filename
+        )
+
+        print(
+            "Size:",
+            file_size
+        )
+
+
+        # =================================================
+        # إرسال الملف
+        # =================================================
 
         response = send_file(
 
@@ -830,9 +876,10 @@ def download_video():
 
         )
 
-        # -------------------------------------------------
+
+        # =================================================
         # حذف المجلد بعد انتهاء الاستجابة
-        # -------------------------------------------------
+        # =================================================
 
         @response.call_on_close
         def cleanup():
@@ -844,24 +891,44 @@ def download_video():
                     ignore_errors=True
                 )
 
-            except Exception as e:
+            except Exception:
+                pass
 
-                print(
-                    "Cleanup error:",
-                    str(e)
-                )
 
         return response
 
+
     except Exception as e:
+
+        error_text = str(e)
+
+        print(
+            "================================"
+        )
 
         print(
             "Video download error:"
         )
 
         print(
-            str(e)
+            error_text
         )
+
+        print(
+            "================================"
+        )
+
+
+        try:
+
+            shutil.rmtree(
+                temp_dir,
+                ignore_errors=True
+            )
+
+        except Exception:
+            pass
+
 
         return jsonify({
 
@@ -871,16 +938,9 @@ def download_video():
                 "تعذر تحميل الفيديو",
 
             "error":
-                str(e)
+                error_text
 
         }), 500
-
-    finally:
-
-        # لا نحذف هنا لأن send_file
-        # يحتاج الملف أثناء الإرسال
-
-        pass
 
 
 # =========================================================
@@ -890,19 +950,12 @@ def download_video():
 if __name__ == "__main__":
 
     port = int(
+
         os.environ.get(
             "PORT",
             5000
         )
-    )
 
-    print(
-        "Ahmed Khaled Server started"
-    )
-
-    print(
-        "Port:",
-        port
     )
 
     app.run(
@@ -913,4 +966,4 @@ if __name__ == "__main__":
 
         debug=False
 
-        )
+    )
