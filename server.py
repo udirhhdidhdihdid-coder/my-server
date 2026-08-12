@@ -1,19 +1,16 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 import random
 import os
 import json
 import time
 import threading
-from urllib.parse import urlparse
+import tempfile
+import uuid
+import yt_dlp
 
 app = Flask(__name__)
 
-# =========================================================
-# إعدادات
-# =========================================================
-
 DATA_FILE = "server_data.json"
-
 lock = threading.Lock()
 
 current_data = {
@@ -24,57 +21,27 @@ current_data = {
 }
 
 
-# =========================================================
-# تحميل البيانات
-# =========================================================
-
 def load_data():
-
     global current_data
 
     try:
-
         if os.path.exists(DATA_FILE):
-
-            with open(
-                DATA_FILE,
-                "r",
-                encoding="utf-8"
-            ) as file:
-
+            with open(DATA_FILE, "r", encoding="utf-8") as file:
                 saved = json.load(file)
 
                 if isinstance(saved, dict):
-
                     current_data.update(saved)
 
-                    if not isinstance(
-                        current_data.get("links"),
-                        list
-                    ):
+                    if "links" not in current_data:
                         current_data["links"] = []
 
     except Exception as e:
-
         print("Load error:", e)
 
 
-# =========================================================
-# حفظ البيانات
-# =========================================================
-
 def save_data():
-
     try:
-
-        temp_file = DATA_FILE + ".tmp"
-
-        with open(
-            temp_file,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
+        with open(DATA_FILE, "w", encoding="utf-8") as file:
             json.dump(
                 current_data,
                 file,
@@ -82,198 +49,58 @@ def save_data():
                 indent=2
             )
 
-        os.replace(
-            temp_file,
-            DATA_FILE
-        )
-
         return True
 
     except Exception as e:
-
         print("Save error:", e)
-
         return False
 
 
 load_data()
 
 
-# =========================================================
-# الصفحة الرئيسية
-# =========================================================
-
 @app.route("/", methods=["GET"])
 def home():
-
     return jsonify({
-
         "success": True,
-
-        "service":
-            "Ahmed Khaled Server",
-
-        "status":
-            "online",
-
-        "version":
-            "3.0",
-
+        "service": "Ahmed Khaled Server",
+        "status": "online",
+        "version": "3.0",
         "routes": [
-
             "/",
-
             "/generate-code",
-
             "/verify-code",
-
             "/check-status",
-
             "/save-link",
-
             "/links",
-
             "/clear-links",
-
-            "/status"
+            "/download-video"
         ]
     })
 
 
-# =========================================================
-# إنشاء كود جديد
-# =========================================================
-
-@app.route(
-    "/generate-code",
-    methods=["GET"]
-)
+@app.route("/generate-code", methods=["GET"])
 def generate_code():
 
     with lock:
 
-        code = str(
-            random.randint(
-                100000,
-                999999
-            )
-        )
+        code = str(random.randint(100000, 999999))
 
         current_data["code"] = code
-
         current_data["linked"] = False
 
-        # -------------------------------------------------
-        # إنشاء رابط تحقق للكود
-        # -------------------------------------------------
-
-        verify_link = (
-            request.host_url.rstrip("/")
-            + "/verify-code?code="
-            + code
-        )
-
-        # -------------------------------------------------
-        # إزالة رابط الكود السابق
-        # حتى لا تتراكم الأكواد القديمة
-        # -------------------------------------------------
-
-        new_links = []
-
-        for item in current_data.get(
-            "links",
-            []
-        ):
-
-            if not isinstance(item, dict):
-                continue
-
-            if item.get(
-                "type"
-            ) == "generated_code":
-
-                continue
-
-            new_links.append(item)
-
-        current_data["links"] = new_links
-
-        # -------------------------------------------------
-        # حفظ رابط الكود الجديد
-        # -------------------------------------------------
-
-        code_link = {
-
-            "type":
-                "generated_code",
-
-            "code":
-                code,
-
-            "url":
-                verify_link,
-
-            "created_at":
-                int(time.time())
-        }
-
-        current_data["links"].append(
-            code_link
-        )
-
-        saved = save_data()
-
-    if not saved:
-
-        return jsonify({
-
-            "success": False,
-
-            "message":
-                "تم إنشاء الكود لكن فشل حفظه"
-        }), 500
+        save_data()
 
     return jsonify({
-
-        "success":
-            True,
-
-        "code":
-            code,
-
-        "url":
-            verify_link,
-
-        "message":
-            "تم إنشاء وحفظ كود الربط"
+        "success": True,
+        "code": code
     })
 
 
-# =========================================================
-# التحقق من الكود
-# =========================================================
-
-@app.route(
-    "/verify-code",
-    methods=["GET"]
-)
+@app.route("/verify-code", methods=["GET"])
 def verify_code():
 
-    code_param = request.args.get(
-        "code",
-        ""
-    ).strip()
-
-    if not code_param:
-
-        return jsonify({
-
-            "success":
-                False,
-
-            "message":
-                "لم يتم إرسال الكود"
-        }), 400
+    code_param = request.args.get("code", "").strip()
 
     with lock:
 
@@ -284,91 +111,32 @@ def verify_code():
             save_data()
 
             return jsonify({
-
-                "success":
-                    True,
-
-                "message":
-                    "تم الربط بنجاح",
-
-                "code":
-                    code_param
+                "success": True,
+                "message": "تم الربط بنجاح"
             })
 
     return jsonify({
-
-        "success":
-            False,
-
-        "message":
-            "الكود غير صحيح"
+        "success": False,
+        "message": "الكود غير صحيح"
     }), 400
 
 
-# =========================================================
-# فحص حالة الربط
-# =========================================================
-
-@app.route(
-    "/check-status",
-    methods=["GET"]
-)
+@app.route("/check-status", methods=["GET"])
 def check_status():
 
     with lock:
 
         return jsonify({
-
-            "success":
-                True,
-
-            "linked":
-                current_data["linked"],
-
-            "code":
-                current_data["code"]
+            "success": True,
+            "linked": current_data["linked"],
+            "code": current_data["code"]
         })
 
 
-# =========================================================
-# التحقق من الرابط
-# =========================================================
-
-def valid_url(url):
-
-    try:
-
-        parsed = urlparse(url)
-
-        return (
-            parsed.scheme in [
-                "http",
-                "https"
-            ]
-            and
-            bool(parsed.netloc)
-        )
-
-    except Exception:
-
-        return False
-
-
-# =========================================================
-# حفظ رابط
-# =========================================================
-
-@app.route(
-    "/save-link",
-    methods=["GET", "POST"]
-)
+@app.route("/save-link", methods=["GET", "POST"])
 def save_link():
 
     url = ""
-
-    # -------------------------------------------------
-    # GET
-    # -------------------------------------------------
 
     if request.method == "GET":
 
@@ -377,22 +145,13 @@ def save_link():
             ""
         ).strip()
 
-    # -------------------------------------------------
-    # POST
-    # -------------------------------------------------
-
-    elif request.method == "POST":
+    else:
 
         try:
 
-            data = request.get_json(
-                silent=True
-            )
+            data = request.get_json(silent=True)
 
-            if isinstance(
-                data,
-                dict
-            ):
+            if isinstance(data, dict):
 
                 url = str(
                     data.get(
@@ -405,132 +164,54 @@ def save_link():
 
             url = ""
 
-    # -------------------------------------------------
-    # فحص الرابط
-    # -------------------------------------------------
-
     if not url:
 
         return jsonify({
-
-            "success":
-                False,
-
-            "message":
-                "لم يتم إرسال الرابط"
+            "success": False,
+            "message": "لم يتم إرسال الرابط"
         }), 400
 
-    if not valid_url(url):
+    if not (
+        url.startswith("http://")
+        or
+        url.startswith("https://")
+    ):
 
         return jsonify({
-
-            "success":
-                False,
-
-            "message":
-                "الرابط غير صالح"
+            "success": False,
+            "message": "الرابط غير صالح"
         }), 400
 
     with lock:
 
-        # -------------------------------------------------
-        # منع التكرار
-        # -------------------------------------------------
+        for item in current_data["links"]:
 
-        for item in current_data.get(
-            "links",
-            []
-        ):
-
-            if not isinstance(
-                item,
-                dict
-            ):
-                continue
-
-            if item.get(
-                "url"
-            ) == url:
+            if item.get("url") == url:
 
                 return jsonify({
-
-                    "success":
-                        True,
-
-                    "message":
-                        "الرابط موجود مسبقاً",
-
-                    "url":
-                        url,
-
-                    "duplicate":
-                        True,
-
-                    "count":
-                        len(
-                            current_data["links"]
-                        )
+                    "success": True,
+                    "message": "الرابط موجود مسبقاً",
+                    "url": url,
+                    "duplicate": True,
+                    "count": len(current_data["links"])
                 })
 
-        # -------------------------------------------------
-        # إنشاء سجل
-        # -------------------------------------------------
+        current_data["links"].append({
+            "url": url,
+            "created_at": int(time.time())
+        })
 
-        link_data = {
-
-            "type":
-                "saved_link",
-
-            "url":
-                url,
-
-            "created_at":
-                int(time.time())
-        }
-
-        current_data["links"].append(
-            link_data
-        )
-
-        saved = save_data()
-
-        if not saved:
-
-            return jsonify({
-
-                "success":
-                    False,
-
-                "message":
-                    "فشل حفظ الرابط"
-            }), 500
+        save_data()
 
         return jsonify({
-
-            "success":
-                True,
-
-            "message":
-                "تم حفظ الرابط بالسيرفر",
-
-            "url":
-                url,
-
-            "count":
-                len(
-                    current_data["links"]
-                )
+            "success": True,
+            "message": "تم حفظ الرابط بالسيرفر",
+            "url": url,
+            "count": len(current_data["links"])
         })
 
 
-# =========================================================
-# عرض جميع الروابط
-# =========================================================
-
-@app.route(
-    "/links",
-    methods=["GET"]
-)
+@app.route("/links", methods=["GET"])
 def get_links():
 
     with lock:
@@ -541,41 +222,13 @@ def get_links():
         )
 
         return jsonify({
-
-            "success":
-                True,
-
-            "count":
-                len(links),
-
-            "current_code":
-                current_data.get(
-                    "code",
-                    ""
-                ),
-
-            "linked":
-                current_data.get(
-                    "linked",
-                    False
-                ),
-
-            "links":
-                links
+            "success": True,
+            "count": len(links),
+            "links": links
         })
 
 
-# =========================================================
-# حذف جميع الروابط
-# =========================================================
-
-@app.route(
-    "/clear-links",
-    methods=[
-        "GET",
-        "POST"
-    ]
-)
+@app.route("/clear-links", methods=["GET", "POST"])
 def clear_links():
 
     with lock:
@@ -585,57 +238,156 @@ def clear_links():
         save_data()
 
     return jsonify({
-
-        "success":
-            True,
-
-        "message":
-            "تم حذف جميع الروابط"
+        "success": True,
+        "message": "تم حذف جميع الروابط"
     })
 
 
-# =========================================================
-# معلومات السيرفر
-# =========================================================
-
-@app.route(
-    "/status",
-    methods=["GET"]
-)
+@app.route("/status", methods=["GET"])
 def server_status():
 
     with lock:
 
         return jsonify({
-
-            "success":
-                True,
-
-            "service":
-                "Ahmed Khaled Server",
-
-            "online":
-                True,
-
-            "linked":
-                current_data["linked"],
-
-            "current_code":
-                current_data["code"],
-
-            "links_count":
-                len(
-                    current_data["links"]
-                ),
-
-            "time":
-                int(time.time())
+            "success": True,
+            "service": "Ahmed Khaled Server",
+            "online": True,
+            "linked": current_data["linked"],
+            "links_count": len(
+                current_data["links"]
+            ),
+            "time": int(time.time())
         })
 
 
 # =========================================================
-# تشغيل Render
+# تحميل فيديو من رابط عام
 # =========================================================
+
+@app.route("/download-video", methods=["GET"])
+def download_video():
+
+    video_url = request.args.get(
+        "url",
+        ""
+    ).strip()
+
+    if not video_url:
+
+        return jsonify({
+            "success": False,
+            "message": "لم يتم إرسال الرابط"
+        }), 400
+
+    allowed_hosts = [
+        "tiktok.com",
+        "www.tiktok.com",
+        "vm.tiktok.com",
+        "vt.tiktok.com",
+        "instagram.com",
+        "www.instagram.com"
+    ]
+
+    try:
+
+        from urllib.parse import urlparse
+
+        parsed = urlparse(video_url)
+
+        hostname = parsed.netloc.lower()
+
+        valid = False
+
+        for host in allowed_hosts:
+
+            if hostname == host or hostname.endswith("." + host):
+                valid = True
+                break
+
+        if not valid:
+
+            return jsonify({
+                "success": False,
+                "message": "الرابط ليس TikTok أو Instagram"
+            }), 400
+
+    except Exception:
+
+        return jsonify({
+            "success": False,
+            "message": "الرابط غير صالح"
+        }), 400
+
+    temp_dir = tempfile.mkdtemp(
+        prefix="ahmed_video_"
+    )
+
+    output_template = os.path.join(
+        temp_dir,
+        "%(id)s.%(ext)s"
+    )
+
+    try:
+
+        options = {
+            "outtmpl": output_template,
+            "format": "best[ext=mp4]/best",
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "restrictfilenames": True,
+            "socket_timeout": 30,
+        }
+
+        with yt_dlp.YoutubeDL(options) as ydl:
+
+            info = ydl.extract_info(
+                video_url,
+                download=True
+            )
+
+            downloaded = ydl.prepare_filename(info)
+
+        if not os.path.exists(downloaded):
+
+            files = os.listdir(temp_dir)
+
+            if not files:
+
+                return jsonify({
+                    "success": False,
+                    "message": "لم يتم العثور على الفيديو"
+                }), 500
+
+            downloaded = os.path.join(
+                temp_dir,
+                files[0]
+            )
+
+        filename = os.path.basename(
+            downloaded
+        )
+
+        return send_file(
+            downloaded,
+            as_attachment=False,
+            download_name=filename,
+            mimetype="video/mp4"
+        )
+
+    except Exception as e:
+
+        print(
+            "Video download error:",
+            str(e)
+        )
+
+        return jsonify({
+            "success": False,
+            "message": "تعذر تحميل الفيديو",
+            "error": str(e)
+        }), 500
+
 
 if __name__ == "__main__":
 
@@ -646,17 +398,8 @@ if __name__ == "__main__":
         )
     )
 
-    print(
-        "Ahmed Khaled Server started"
-    )
-
-    print(
-        "Port:",
-        port
-    )
-
     app.run(
         host="0.0.0.0",
         port=port,
         debug=False
-        )
+    )
