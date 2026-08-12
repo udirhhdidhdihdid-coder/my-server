@@ -13,7 +13,7 @@ import yt_dlp
 
 
 # =========================================================
-# إنشاء Flask app
+# إنشاء Flask App
 # =========================================================
 
 app = Flask(__name__)
@@ -451,9 +451,7 @@ def is_allowed_video_url(video_url):
 
     try:
 
-        parsed = urlparse(
-            video_url
-        )
+        parsed = urlparse(video_url)
 
         hostname = (
             parsed.netloc
@@ -478,9 +476,7 @@ def is_allowed_video_url(video_url):
             if (
                 hostname == host
                 or
-                hostname.endswith(
-                    "." + host
-                )
+                hostname.endswith("." + host)
             ):
 
                 return True
@@ -523,9 +519,7 @@ def clean_video_url(video_url):
 
 def resolve_short_url(video_url):
 
-    video_url = clean_video_url(
-        video_url
-    )
+    video_url = clean_video_url(video_url)
 
     try:
 
@@ -605,18 +599,14 @@ def download_video():
         }), 400
 
 
-    # -----------------------------------------------------
     # تنظيف الرابط
-    # -----------------------------------------------------
 
     video_url = clean_video_url(
         video_url
     )
 
 
-    # -----------------------------------------------------
     # التحقق من الموقع
-    # -----------------------------------------------------
 
     if not is_allowed_video_url(
         video_url
@@ -632,18 +622,14 @@ def download_video():
         }), 400
 
 
-    # -----------------------------------------------------
     # حل الرابط المختصر
-    # -----------------------------------------------------
 
     resolved_url = resolve_short_url(
         video_url
     )
 
 
-    # -----------------------------------------------------
     # التحقق مرة ثانية
-    # -----------------------------------------------------
 
     if not is_allowed_video_url(
         resolved_url
@@ -653,11 +639,7 @@ def download_video():
 
 
     print(
-        "================================"
-    )
-
-    print(
-        "Download request"
+        "Download request:"
     )
 
     print(
@@ -670,14 +652,10 @@ def download_video():
         resolved_url
     )
 
-    print(
-        "================================"
-    )
 
-
-    # -----------------------------------------------------
+    # =====================================================
     # مجلد مؤقت
-    # -----------------------------------------------------
+    # =====================================================
 
     temp_dir = tempfile.mkdtemp(
         prefix="ahmed_video_"
@@ -685,11 +663,8 @@ def download_video():
 
 
     output_template = os.path.join(
-
         temp_dir,
-
         "%(id)s.%(ext)s"
-
     )
 
 
@@ -704,7 +679,6 @@ def download_video():
             "outtmpl":
                 output_template,
 
-            # يختار MP4 إن توفر
             "format":
                 "best[ext=mp4]/best",
 
@@ -757,17 +731,12 @@ def download_video():
         ) as ydl:
 
             info = ydl.extract_info(
-
                 resolved_url,
-
                 download=True
-
             )
 
-            downloaded = (
-                ydl.prepare_filename(
-                    info
-                )
+            downloaded = ydl.prepare_filename(
+                info
             )
 
 
@@ -783,20 +752,7 @@ def download_video():
                 temp_dir
             )
 
-            video_files = [
-
-                f for f in files
-
-                if os.path.isfile(
-                    os.path.join(
-                        temp_dir,
-                        f
-                    )
-                )
-
-            ]
-
-            if not video_files:
+            if not files:
 
                 return jsonify({
 
@@ -808,16 +764,13 @@ def download_video():
                 }), 500
 
             downloaded = os.path.join(
-
                 temp_dir,
-
-                video_files[0]
-
+                files[0]
             )
 
 
         # =================================================
-        # التأكد من وجود الملف
+        # التأكد من الملف
         # =================================================
 
         if not os.path.exists(
@@ -833,10 +786,6 @@ def download_video():
 
             }), 500
 
-
-        # =================================================
-        # حجم الملف
-        # =================================================
 
         file_size = os.path.getsize(
             downloaded
@@ -889,7 +838,7 @@ def download_video():
 
 
         # =================================================
-        # تنظيف الملفات المؤقتة
+        # تنظيف الملفات
         # =================================================
 
         @response.call_on_close
@@ -903,7 +852,6 @@ def download_video():
                 )
 
             except Exception:
-
                 pass
 
 
@@ -939,7 +887,6 @@ def download_video():
             )
 
         except Exception:
-
             pass
 
 
@@ -957,18 +904,16 @@ def download_video():
 
 
 # =========================================================
-# تشغيل السيرفر
+# تشغيل السيرفر محلياً
 # =========================================================
 
 if __name__ == "__main__":
 
     port = int(
-
         os.environ.get(
             "PORT",
             5000
         )
-
     )
 
     app.run(
@@ -979,4 +924,4 @@ if __name__ == "__main__":
 
         debug=False
 
-            )
+                )
