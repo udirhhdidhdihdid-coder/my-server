@@ -39,7 +39,7 @@ def generate_code():
 @app.route("/verify-code", methods=["GET"])
 def verify_code():
 
-    code_param = request.args.get("code", "")
+    code_param = request.args.get("code", "").strip()
 
     if code_param == current_data["code"]:
 
@@ -66,10 +66,6 @@ def check_status():
     })
 
 
-# =========================
-# إضافة رابط
-# =========================
-
 @app.route("/add-link", methods=["GET", "POST"])
 def add_link():
 
@@ -79,11 +75,16 @@ def add_link():
 
         data = request.get_json(silent=True) or {}
 
-        url = str(data.get("url", "")).strip()
+        url = str(
+            data.get("url", "")
+        ).strip()
 
     else:
 
-        url = request.args.get("url", "").strip()
+        url = request.args.get(
+            "url",
+            ""
+        ).strip()
 
     if not url:
 
@@ -92,12 +93,16 @@ def add_link():
             "message": "الرابط فارغ"
         }), 400
 
-    # التحقق من أن الرابط HTTP أو HTTPS
-    if not re.match(r"^https?://", url, re.IGNORECASE):
+    if not re.match(
+        r"^https?://",
+        url,
+        re.IGNORECASE
+    ):
 
         return jsonify({
             "success": False,
-            "message": "الرابط يجب أن يبدأ بـ http:// أو https://"
+            "message":
+                "الرابط يجب أن يبدأ بـ http:// أو https://"
         }), 400
 
     item = {
@@ -114,23 +119,18 @@ def add_link():
     })
 
 
-# =========================
-# عرض الروابط
-# =========================
-
 @app.route("/links", methods=["GET"])
 def get_links():
 
     return jsonify({
         "success": True,
-        "count": len(current_data["links"]),
-        "links": current_data["links"]
+        "count": len(
+            current_data["links"]
+        ),
+        "links":
+            current_data["links"]
     })
 
-
-# =========================
-# حذف جميع الروابط
-# =========================
 
 @app.route("/clear-links", methods=["GET", "POST"])
 def clear_links():
@@ -139,13 +139,10 @@ def clear_links():
 
     return jsonify({
         "success": True,
-        "message": "تم حذف جميع الروابط"
+        "message":
+            "تم حذف جميع الروابط"
     })
 
-
-# =========================
-# تشغيل السيرفر
-# =========================
 
 if __name__ == "__main__":
 
