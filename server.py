@@ -29,9 +29,11 @@ current_data = {
 # =========================================================
 
 def load_data():
+
     global current_data
 
     try:
+
         if os.path.exists(DATA_FILE):
 
             with open(
@@ -46,7 +48,10 @@ def load_data():
 
                     current_data.update(saved)
 
-                    if "links" not in current_data:
+                    if not isinstance(
+                        current_data.get("links"),
+                        list
+                    ):
                         current_data["links"] = []
 
     except Exception as e:
@@ -62,8 +67,10 @@ def save_data():
 
     try:
 
+        temp_file = DATA_FILE + ".tmp"
+
         with open(
-            DATA_FILE,
+            temp_file,
             "w",
             encoding="utf-8"
         ) as file:
@@ -74,6 +81,11 @@ def save_data():
                 ensure_ascii=False,
                 indent=2
             )
+
+        os.replace(
+            temp_file,
+            DATA_FILE
+        )
 
         return True
 
@@ -95,18 +107,35 @@ load_data()
 def home():
 
     return jsonify({
+
         "success": True,
-        "service": "Ahmed Khaled Server",
-        "status": "online",
-        "version": "2.0",
+
+        "service":
+            "Ahmed Khaled Server",
+
+        "status":
+            "online",
+
+        "version":
+            "3.0",
+
         "routes": [
+
             "/",
+
             "/generate-code",
+
             "/verify-code",
+
             "/check-status",
+
             "/save-link",
+
             "/links",
-            "/clear-links"
+
+            "/clear-links",
+
+            "/status"
         ]
     })
 
@@ -115,7 +144,10 @@ def home():
 # إنشاء كود جديد
 # =========================================================
 
-@app.route("/generate-code", methods=["GET"])
+@app.route(
+    "/generate-code",
+    methods=["GET"]
+)
 def generate_code():
 
     with lock:
@@ -131,11 +163,89 @@ def generate_code():
 
         current_data["linked"] = False
 
-        save_data()
+        # -------------------------------------------------
+        # إنشاء رابط تحقق للكود
+        # -------------------------------------------------
+
+        verify_link = (
+            request.host_url.rstrip("/")
+            + "/verify-code?code="
+            + code
+        )
+
+        # -------------------------------------------------
+        # إزالة رابط الكود السابق
+        # حتى لا تتراكم الأكواد القديمة
+        # -------------------------------------------------
+
+        new_links = []
+
+        for item in current_data.get(
+            "links",
+            []
+        ):
+
+            if not isinstance(item, dict):
+                continue
+
+            if item.get(
+                "type"
+            ) == "generated_code":
+
+                continue
+
+            new_links.append(item)
+
+        current_data["links"] = new_links
+
+        # -------------------------------------------------
+        # حفظ رابط الكود الجديد
+        # -------------------------------------------------
+
+        code_link = {
+
+            "type":
+                "generated_code",
+
+            "code":
+                code,
+
+            "url":
+                verify_link,
+
+            "created_at":
+                int(time.time())
+        }
+
+        current_data["links"].append(
+            code_link
+        )
+
+        saved = save_data()
+
+    if not saved:
+
+        return jsonify({
+
+            "success": False,
+
+            "message":
+                "تم إنشاء الكود لكن فشل حفظه"
+        }), 500
 
     return jsonify({
-        "success": True,
-        "code": code
+
+        "success":
+            True,
+
+        "code":
+            code,
+
+        "url":
+            verify_link,
+
+        "message":
+            "تم إنشاء وحفظ كود الربط"
     })
 
 
@@ -143,13 +253,27 @@ def generate_code():
 # التحقق من الكود
 # =========================================================
 
-@app.route("/verify-code", methods=["GET"])
+@app.route(
+    "/verify-code",
+    methods=["GET"]
+)
 def verify_code():
 
     code_param = request.args.get(
         "code",
         ""
     ).strip()
+
+    if not code_param:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "لم يتم إرسال الكود"
+        }), 400
 
     with lock:
 
@@ -160,13 +284,24 @@ def verify_code():
             save_data()
 
             return jsonify({
-                "success": True,
-                "message": "تم الربط بنجاح"
+
+                "success":
+                    True,
+
+                "message":
+                    "تم الربط بنجاح",
+
+                "code":
+                    code_param
             })
 
     return jsonify({
-        "success": False,
-        "message": "الكود غير صحيح"
+
+        "success":
+            False,
+
+        "message":
+            "الكود غير صحيح"
     }), 400
 
 
@@ -174,15 +309,24 @@ def verify_code():
 # فحص حالة الربط
 # =========================================================
 
-@app.route("/check-status", methods=["GET"])
+@app.route(
+    "/check-status",
+    methods=["GET"]
+)
 def check_status():
 
     with lock:
 
         return jsonify({
-            "success": True,
-            "linked": current_data["linked"],
-            "code": current_data["code"]
+
+            "success":
+                True,
+
+            "linked":
+                current_data["linked"],
+
+            "code":
+                current_data["code"]
         })
 
 
@@ -197,7 +341,10 @@ def valid_url(url):
         parsed = urlparse(url)
 
         return (
-            parsed.scheme in ["http", "https"]
+            parsed.scheme in [
+                "http",
+                "https"
+            ]
             and
             bool(parsed.netloc)
         )
@@ -209,26 +356,19 @@ def valid_url(url):
 
 # =========================================================
 # حفظ رابط
-#
-# يدعم:
-#
-# GET
-# /save-link?url=https://example.com
-#
-# POST JSON
-# {
-#   "url": "https://example.com"
-# }
 # =========================================================
 
-@app.route("/save-link", methods=["GET", "POST"])
+@app.route(
+    "/save-link",
+    methods=["GET", "POST"]
+)
 def save_link():
 
     url = ""
 
-    # -------------------------
+    # -------------------------------------------------
     # GET
-    # -------------------------
+    # -------------------------------------------------
 
     if request.method == "GET":
 
@@ -237,9 +377,9 @@ def save_link():
             ""
         ).strip()
 
-    # -------------------------
+    # -------------------------------------------------
     # POST
-    # -------------------------
+    # -------------------------------------------------
 
     elif request.method == "POST":
 
@@ -249,7 +389,10 @@ def save_link():
                 silent=True
             )
 
-            if isinstance(data, dict):
+            if isinstance(
+                data,
+                dict
+            ):
 
                 url = str(
                     data.get(
@@ -262,62 +405,121 @@ def save_link():
 
             url = ""
 
-    # -------------------------
+    # -------------------------------------------------
     # فحص الرابط
-    # -------------------------
+    # -------------------------------------------------
 
     if not url:
 
         return jsonify({
-            "success": False,
-            "message": "لم يتم إرسال الرابط"
+
+            "success":
+                False,
+
+            "message":
+                "لم يتم إرسال الرابط"
         }), 400
 
     if not valid_url(url):
 
         return jsonify({
-            "success": False,
-            "message": "الرابط غير صالح"
+
+            "success":
+                False,
+
+            "message":
+                "الرابط غير صالح"
         }), 400
 
     with lock:
 
+        # -------------------------------------------------
         # منع التكرار
-        for item in current_data["links"]:
+        # -------------------------------------------------
 
-            if item.get("url") == url:
+        for item in current_data.get(
+            "links",
+            []
+        ):
+
+            if not isinstance(
+                item,
+                dict
+            ):
+                continue
+
+            if item.get(
+                "url"
+            ) == url:
 
                 return jsonify({
-                    "success": True,
-                    "message": "الرابط موجود مسبقاً",
-                    "url": url,
-                    "duplicate": True,
-                    "count": len(
-                        current_data["links"]
-                    )
+
+                    "success":
+                        True,
+
+                    "message":
+                        "الرابط موجود مسبقاً",
+
+                    "url":
+                        url,
+
+                    "duplicate":
+                        True,
+
+                    "count":
+                        len(
+                            current_data["links"]
+                        )
                 })
 
-        # إنشاء سجل جديد
+        # -------------------------------------------------
+        # إنشاء سجل
+        # -------------------------------------------------
+
         link_data = {
-            "url": url,
-            "created_at": int(
-                time.time()
-            )
+
+            "type":
+                "saved_link",
+
+            "url":
+                url,
+
+            "created_at":
+                int(time.time())
         }
 
         current_data["links"].append(
             link_data
         )
 
-        save_data()
+        saved = save_data()
+
+        if not saved:
+
+            return jsonify({
+
+                "success":
+                    False,
+
+                "message":
+                    "فشل حفظ الرابط"
+            }), 500
 
         return jsonify({
-            "success": True,
-            "message": "تم حفظ الرابط بالسيرفر",
-            "url": url,
-            "count": len(
-                current_data["links"]
-            )
+
+            "success":
+                True,
+
+            "message":
+                "تم حفظ الرابط بالسيرفر",
+
+            "url":
+                url,
+
+            "count":
+                len(
+                    current_data["links"]
+                )
         })
 
 
@@ -325,7 +527,10 @@ def save_link():
 # عرض جميع الروابط
 # =========================================================
 
-@app.route("/links", methods=["GET"])
+@app.route(
+    "/links",
+    methods=["GET"]
+)
 def get_links():
 
     with lock:
@@ -336,9 +541,27 @@ def get_links():
         )
 
         return jsonify({
-            "success": True,
-            "count": len(links),
-            "links": links
+
+            "success":
+                True,
+
+            "count":
+                len(links),
+
+            "current_code":
+                current_data.get(
+                    "code",
+                    ""
+                ),
+
+            "linked":
+                current_data.get(
+                    "linked",
+                    False
+                ),
+
+            "links":
+                links
         })
 
 
@@ -346,7 +569,13 @@ def get_links():
 # حذف جميع الروابط
 # =========================================================
 
-@app.route("/clear-links", methods=["GET", "POST"])
+@app.route(
+    "/clear-links",
+    methods=[
+        "GET",
+        "POST"
+    ]
+)
 def clear_links():
 
     with lock:
@@ -356,8 +585,12 @@ def clear_links():
         save_data()
 
     return jsonify({
-        "success": True,
-        "message": "تم حذف جميع الروابط"
+
+        "success":
+            True,
+
+        "message":
+            "تم حذف جميع الروابط"
     })
 
 
@@ -365,22 +598,38 @@ def clear_links():
 # معلومات السيرفر
 # =========================================================
 
-@app.route("/status", methods=["GET"])
+@app.route(
+    "/status",
+    methods=["GET"]
+)
 def server_status():
 
     with lock:
 
         return jsonify({
-            "success": True,
-            "service": "Ahmed Khaled Server",
-            "online": True,
-            "linked": current_data["linked"],
-            "links_count": len(
-                current_data["links"]
-            ),
-            "time": int(
-                time.time()
-            )
+
+            "success":
+                True,
+
+            "service":
+                "Ahmed Khaled Server",
+
+            "online":
+                True,
+
+            "linked":
+                current_data["linked"],
+
+            "current_code":
+                current_data["code"],
+
+            "links_count":
+                len(
+                    current_data["links"]
+                ),
+
+            "time":
+                int(time.time())
         })
 
 
@@ -410,4 +659,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port,
         debug=False
-    )
+        )
